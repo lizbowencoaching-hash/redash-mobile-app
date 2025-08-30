@@ -8,7 +8,7 @@ const config: CapacitorConfig = {
     androidScheme: 'https'
   },
   ios: {
-    minVersion: '13.0',
+    minVersion: '14.0',
     cordovaSwiftVersion: '5.0'
   },
   plugins: {
