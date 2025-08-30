@@ -26,8 +26,10 @@ jobs:
     - name: Build React app
       run: npm run build
       
-    - name: Install Capacitor CLI
-      run: npm install -g @capacitor/cli
+    - name: Install Capacitor packages
+      run: |
+        npm install -g @capacitor/cli
+        npm install @capacitor/core @capacitor/ios
       
     - name: Add iOS platform
       run: npx cap add ios
