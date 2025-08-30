@@ -81,31 +81,30 @@ jobs:
     - name: Sync Capacitor
       run: npx cap sync ios
         
+    - name: List available simulators
+      run: |
+        xcrun simctl list devices available
+        xcrun simctl list runtimes
+        
     - name: Build iOS app for simulator
       run: |
         cd ios/App
-        # List available simulators and runtimes
-        echo "=== Available Simulators ==="
-        xcrun simctl list devices available
-        echo "=== Available Runtimes ==="
-        xcrun simctl list runtimes
-        
-        # Build for iOS Simulator using generic destination
+        # Build for iOS Simulator using specific available version
         xcodebuild -workspace App.xcworkspace \
           -scheme App \
           -configuration Debug \
-          -destination 'platform=iOS Simulator' \
+          -destination 'platform=iOS Simulator,name=iPhone 14,OS=16.4' \
           -derivedDataPath ./build \
           build
           
     - name: Archive iOS app
       run: |
         cd ios/App
-        # Build for device (unsigned for CI)
+        # Build for device using available iOS version (unsigned for CI)
         xcodebuild -workspace App.xcworkspace \
           -scheme App \
           -configuration Release \
-          -destination 'generic/platform=iOS' \
+          -destination 'generic/platform=iOS,OS=16.4' \
           -archivePath ./REDash.xcarchive \
           archive \
           CODE_SIGN_IDENTITY="" \
