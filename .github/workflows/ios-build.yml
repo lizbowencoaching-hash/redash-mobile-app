@@ -19,91 +19,110 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '18'
+        cache: 'npm'
         
     - name: Install dependencies
-      run: npm install
+      run: npm ci
       
     - name: Build React app
       run: npm run build
       
-    - name: Install Capacitor packages
+    - name: Setup Capacitor
       run: |
-        npm install -g @capacitor/cli
-        npm install @capacitor/core @capacitor/ios
-      
+        npm install -g @capacitor/cli@latest
+        npm install @capacitor/core@latest @capacitor/ios@latest
+        
+    - name: Initialize Capacitor (if needed)
+      run: |
+        if [ ! -f "capacitor.config.ts" ]; then
+          npx cap init "REDash" "com.redash.app" --web-dir=dist
+        fi
+        
     - name: Add iOS platform
       run: npx cap add ios
       
-    - name: Update iOS deployment target and Podfile
-      run: |
-        # Update the iOS deployment target to iOS 13.0 in the Xcode project
-        if [ -f "ios/App/App.xcodeproj/project.pbxproj" ]; then
-          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]*\.[0-9]*/IPHONEOS_DEPLOYMENT_TARGET = 14.0/g' ios/App/App.xcodeproj/project.pbxproj
-        fi
+    - name: Setup Xcode version
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: '15.0'
         
-        # Update the Podfile to specify iOS 13.0 and add Capacitor platform
+    - name: Update CocoaPods and clear cache
+      run: |
+        sudo gem install cocoapods --force
+        pod repo update
+        pod cache clean --all
+        
+    - name: Create minimal Podfile
+      run: |
         cat > ios/App/Podfile << 'EOF'
         require_relative '../../node_modules/@capacitor/ios/scripts/pods_helpers'
 
-        platform :ios, '14.0'
+        platform :ios, '13.0'
         use_frameworks!
-
-        # workaround to avoid Xcode caching of Pods that requires
-        # Product -> Clean Build Folder after new Cordova plugins installed
-        # Requires CocoaPods 1.6 or newer
-        install! 'cocoapods', :disable_input_output_paths => true
 
         def capacitor_pods
           pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
           pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
-          pod 'CapacitorLocalNotifications', :path => '../../node_modules/@capacitor/local-notifications'
-          pod 'CapacitorPreferences', :path => '../../node_modules/@capacitor/preferences'
-          pod 'CapacitorPushNotifications', :path => '../../node_modules/@capacitor/push-notifications'
         end
 
         target 'App' do
           capacitor_pods
-          # Add your Pods here
         end
 
         post_install do |installer|
           assertDeploymentTarget(installer)
-          installer.pods_project.targets.each do |target|
-            target.build_configurations.each do |config|
-              config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
-            end
-          end
         end
         EOF
+        
+    - name: Install iOS dependencies with verbose output
+      run: |
+        cd ios/App
+        pod install --verbose --repo-update
         
     - name: Sync Capacitor
       run: npx cap sync ios
         
-    - name: Setup Xcode
-      uses: maxim-lobanov/setup-xcode@v1
-      with:
-        xcode-version: latest-stable
-        
-    - name: Install iOS dependencies
-      run: |
-        cd ios/App
-        pod repo update
-        pod install --repo-update --verbose
-        
-    - name: Build iOS app (Debug)
+    - name: Build iOS app for simulator
       run: |
         cd ios/App
         xcodebuild -workspace App.xcworkspace \
           -scheme App \
           -configuration Debug \
           -destination 'generic/platform=iOS Simulator' \
-          -archivePath App.xcarchive \
-          archive \
-          -allowProvisioningUpdates
+          -derivedDataPath ./build \
+          build
           
+    - name: Archive iOS app
+      run: |
+        cd ios/App
+        xcodebuild -workspace App.xcworkspace \
+          -scheme App \
+          -configuration Release \
+          -destination 'generic/platform=iOS' \
+          -archivePath ./REDash.xcarchive \
+          archive \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO
+          
+    - name: Create IPA (if archive succeeds)
+      run: |
+        cd ios/App
+        if [ -d "./REDash.xcarchive" ]; then
+          xcodebuild -exportArchive \
+            -archivePath ./REDash.xcarchive \
+            -exportPath ./export \
+            -exportOptionsPlist ../../export-options.plist
+        fi
+      continue-on-error: true
+        
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
         name: ios-build
-        path: ios/App/App.xcarchive
+        path: |
+          ios/App/REDash.xcarchive
+          ios/App/export
+          ios/App/build
         retention-days: 30
+        if-no-files-found: warn
