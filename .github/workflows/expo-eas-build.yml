@@ -1,0 +1,42 @@
+name: EAS Build (Alternative iOS Building)
+
+# This workflow uses Expo Application Services for cloud building
+# Uncomment and configure if you prefer EAS over GitHub Actions
+
+# on:
+#   push:
+#     branches: [ main, master ]
+#   workflow_dispatch:
+
+# jobs:
+#   build:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Setup Node.js
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: '18'
+#           cache: 'npm'
+
+#       - name: Setup Expo and EAS
+#         uses: expo/expo-github-action@v8
+#         with:
+#           eas-version: latest
+#           token: ${{ secrets.EXPO_TOKEN }}
+
+#       - name: Install dependencies
+#         run: npm ci
+
+#       - name: Build iOS app with EAS
+#         run: eas build --platform ios --non-interactive
+
+# To use EAS Build:
+# 1. Create account at https://expo.dev
+# 2. Install EAS CLI: npm install -g @expo/eas-cli
+# 3. Login: eas login
+# 4. Configure: eas build:configure
+# 5. Add EXPO_TOKEN to GitHub repository secrets
+# 6. Uncomment this workflow file
