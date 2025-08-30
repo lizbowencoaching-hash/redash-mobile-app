@@ -84,24 +84,28 @@ jobs:
     - name: Build iOS app for simulator
       run: |
         cd ios/App
-        # List available simulators first
+        # List available simulators and runtimes
+        echo "=== Available Simulators ==="
         xcrun simctl list devices available
+        echo "=== Available Runtimes ==="
+        xcrun simctl list runtimes
         
-        # Build for any available iOS simulator
+        # Build for iOS Simulator using generic destination
         xcodebuild -workspace App.xcworkspace \
           -scheme App \
           -configuration Debug \
-          -sdk iphonesimulator \
+          -destination 'platform=iOS Simulator' \
           -derivedDataPath ./build \
           build
           
     - name: Archive iOS app
       run: |
         cd ios/App
+        # Build for device (unsigned for CI)
         xcodebuild -workspace App.xcworkspace \
           -scheme App \
           -configuration Release \
-          -sdk iphoneos \
+          -destination 'generic/platform=iOS' \
           -archivePath ./REDash.xcarchive \
           archive \
           CODE_SIGN_IDENTITY="" \
