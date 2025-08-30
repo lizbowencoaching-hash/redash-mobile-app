@@ -7,6 +7,9 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https'
   },
+  ios: {
+    minVersion: '13.0'
+  },
   plugins: {
     SplashScreen: {
       launchShowDuration: 2000,
