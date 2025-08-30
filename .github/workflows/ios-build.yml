@@ -34,15 +34,42 @@ jobs:
     - name: Add iOS platform
       run: npx cap add ios
       
-    - name: Update iOS deployment target
+    - name: Update iOS deployment target and Podfile
       run: |
-        # Update the iOS deployment target to iOS 13.0 (required for Capacitor 6+)
-        sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]*\.[0-9]*/IPHONEOS_DEPLOYMENT_TARGET = 13.0/g' ios/App/App.xcodeproj/project.pbxproj
+        # Update the iOS deployment target to iOS 13.0 in the Xcode project
+        if [ -f "ios/App/App.xcodeproj/project.pbxproj" ]; then
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]*\.[0-9]*/IPHONEOS_DEPLOYMENT_TARGET = 13.0/g' ios/App/App.xcodeproj/project.pbxproj
+        fi
         
-        # Also update the Podfile to specify iOS 13.0
-        echo "platform :ios, '13.0'" > ios/App/Podfile.tmp
-        tail -n +2 ios/App/Podfile >> ios/App/Podfile.tmp
-        mv ios/App/Podfile.tmp ios/App/Podfile
+        # Update the Podfile to specify iOS 13.0 and add Capacitor platform
+        cat > ios/App/Podfile << 'EOF'
+        require_relative '../../node_modules/@capacitor/ios/scripts/pods_helpers'
+
+        platform :ios, '13.0'
+        use_frameworks!
+
+        # workaround to avoid Xcode caching of Pods that requires
+        # Product -> Clean Build Folder after new Cordova plugins installed
+        # Requires CocoaPods 1.6 or newer
+        install! 'cocoapods', :disable_input_output_paths => true
+
+        def capacitor_pods
+          pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
+          pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
+          pod 'CapacitorLocalNotifications', :path => '../../node_modules/@capacitor/local-notifications'
+          pod 'CapacitorPreferences', :path => '../../node_modules/@capacitor/preferences'
+          pod 'CapacitorPushNotifications', :path => '../../node_modules/@capacitor/push-notifications'
+        end
+
+        target 'App' do
+          capacitor_pods
+          # Add your Pods here
+        end
+
+        post_install do |installer|
+          assertDeploymentTarget(installer)
+        end
+        EOF
         
     - name: Sync Capacitor
       run: npx cap sync ios
@@ -56,7 +83,7 @@ jobs:
       run: |
         cd ios/App
         pod repo update
-        pod install --repo-update
+        pod install --repo-update --verbose
         
     - name: Build iOS app (Debug)
       run: |
@@ -66,7 +93,8 @@ jobs:
           -configuration Debug \
           -destination 'generic/platform=iOS Simulator' \
           -archivePath App.xcarchive \
-          archive
+          archive \
+          -allowProvisioningUpdates
           
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
