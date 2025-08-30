@@ -1,5 +1,3 @@
-import { Capacitor } from '@capacitor/core';
-
 export class NotificationService {
   private static instance: NotificationService;
   private isInitialized = false;
@@ -12,35 +10,23 @@ export class NotificationService {
   }
 
   async initialize(): Promise<void> {
-    if (this.isInitialized || !Capacitor.isNativePlatform()) {
+    if (this.isInitialized) {
       return;
     }
 
     try {
-      console.log('Notification service initialized (notifications disabled for iOS build compatibility)');
-
+      console.log('Notification service initialized (web version - no native notifications)');
       this.isInitialized = true;
     } catch (error) {
       console.error('Error initializing notification service:', error);
     }
   }
 
-  private setupPushNotificationListeners(): void {
-    console.log('Push notification listeners disabled for iOS build compatibility');
-  }
-
-  private async storePushToken(token: string): Promise<void> {
-    try {
-      console.log('Push token storage disabled for iOS build compatibility');
-    } catch (error) {
-      console.error('Error storing push token:', error);
-    }
-  }
-
   async scheduleMonthlyReminder(userId: string): Promise<void> {
     try {
-      console.log('Monthly reminders disabled for iOS build compatibility');
-      return { success: true, message: 'Notifications are not available in this build' };
+      console.log('Monthly reminders not available in web version');
+      // Store preference in localStorage for web compatibility
+      localStorage.setItem('monthlyReminderEnabled', 'true');
     } catch (error) {
       console.error('Error scheduling monthly reminder:', error);
       throw error;
@@ -49,7 +35,8 @@ export class NotificationService {
 
   async cancelMonthlyReminder(): Promise<void> {
     try {
-      console.log('Monthly reminder cancellation disabled for iOS build compatibility');
+      console.log('Cancelling monthly reminder (web version)');
+      localStorage.setItem('monthlyReminderEnabled', 'false');
     } catch (error) {
       console.error('Error cancelling monthly reminder:', error);
     }
@@ -57,7 +44,8 @@ export class NotificationService {
 
   async isMonthlyReminderEnabled(): Promise<boolean> {
     try {
-      return false; // Notifications disabled for iOS build compatibility
+      const enabled = localStorage.getItem('monthlyReminderEnabled') === 'true';
+      return enabled;
     } catch (error) {
       console.error('Error checking monthly reminder status:', error);
       return false;
@@ -66,7 +54,7 @@ export class NotificationService {
 
   async scheduleTransactionStatusReminder(transactionId: string, address: string, daysFromNow: number = 7): Promise<void> {
     try {
-      console.log('Transaction reminders disabled for iOS build compatibility');
+      console.log('Transaction reminders not available in web version');
     } catch (error) {
       console.error('Error scheduling transaction reminder:', error);
     }
@@ -74,7 +62,7 @@ export class NotificationService {
 
   async getPendingNotifications(): Promise<any[]> {
     try {
-      return []; // No notifications available in this build
+      return []; // No notifications available in web version
     } catch (error) {
       console.error('Error getting pending notifications:', error);
       return [];
