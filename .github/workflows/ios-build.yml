@@ -30,7 +30,7 @@ jobs:
       run: npm install -g @capacitor/cli
       
     - name: Add iOS platform
-      run: npx cap add ios --confirm
+      run: npx cap add ios
       
     - name: Sync Capacitor
       run: npx cap sync ios
