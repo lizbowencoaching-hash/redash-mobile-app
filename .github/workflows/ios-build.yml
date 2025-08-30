@@ -1,134 +1,32 @@
-name: Build iOS App
+The job failed because the requested iOS Simulator device ({ platform:iOS Simulator, OS:16.4, name:iPhone 14 }) could not be found. The error log says:
 
-on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch: # Allow manual triggering
+Unable to find a device matching the provided destination specifier: { platform:iOS Simulator, OS:16.4, name:iPhone 14 }
+The requested device could not be found because no available devices matched the request.
 
-jobs:
-  build-ios:
-    runs-on: macos-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        
-    - name: Install dependencies
-      run: npm install
-      
-    - name: Build React app
-      run: npm run build
-      
-    - name: Setup Capacitor
-      run: |
-        npm install -g @capacitor/cli@latest
-        npm install @capacitor/core@latest @capacitor/ios@latest
-        
-    - name: Initialize Capacitor (if needed)
-      run: |
-        if [ ! -f "capacitor.config.ts" ]; then
-          npx cap init "REDash" "com.redash.app" --web-dir=dist
-        fi
-        
-    - name: Add iOS platform
-      run: npx cap add ios
-      
-    - name: Setup Xcode version
-      uses: maxim-lobanov/setup-xcode@v1
-      with:
-        xcode-version: '16.0'
-        
-    - name: Update CocoaPods and clear cache
-      run: |
-        sudo gem install cocoapods --force
-        pod repo update
-        pod cache clean --all
-        
-    - name: Create minimal Podfile
-      run: |
-        cat > ios/App/Podfile << 'EOF'
-        require_relative '../../node_modules/@capacitor/ios/scripts/pods_helpers'
+Solution
+You need to make sure the runner has the required iOS Simulator installed. Here’s how you can fix this:
 
-        platform :ios, '13.0'
-        use_frameworks!
+Update the Workflow Device Specifier
 
-        def capacitor_pods
-          pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
-          pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
-        end
+Change the simulator OS version to one available on GitHub-hosted runners. iOS 16.4 may not be installed; try a more common version like 17.2 or the latest supported by your runner.
 
-        target 'App' do
-          capacitor_pods
-        end
+Example change in your workflow (see .github/workflows/ios-build.yml):
 
-        post_install do |installer|
-          assertDeploymentTarget(installer)
-        end
-        EOF
-        
-    - name: Install iOS dependencies with verbose output
-      run: |
-        cd ios/App
-        pod install --verbose --repo-update
-        
-    - name: Sync Capacitor
-      run: npx cap sync ios
-        
-    - name: List available simulators
-      run: |
-        xcrun simctl list devices available
-        xcrun simctl list runtimes
-        
-    - name: Build iOS app for simulator
-      run: |
-        cd ios/App
-        # Build for iOS Simulator using specific available version
-        xcodebuild -workspace App.xcworkspace \
-          -scheme App \
-          -configuration Debug \
-          -destination 'platform=iOS Simulator,name=iPhone 14,OS=16.4' \
-          -derivedDataPath ./build \
-          build
-          
-    - name: Archive iOS app
-      run: |
-        cd ios/App
-        # Build for device using available iOS version (unsigned for CI)
-        xcodebuild -workspace App.xcworkspace \
-          -scheme App \
-          -configuration Release \
-          -destination 'generic/platform=iOS,OS=16.4' \
-          -archivePath ./REDash.xcarchive \
-          archive \
-          CODE_SIGN_IDENTITY="" \
-          CODE_SIGNING_REQUIRED=NO \
-          CODE_SIGNING_ALLOWED=NO
-          
-    - name: Create IPA (if archive succeeds)
-      run: |
-        cd ios/App
-        if [ -d "./REDash.xcarchive" ]; then
-          xcodebuild -exportArchive \
-            -archivePath ./REDash.xcarchive \
-            -exportPath ./export \
-            -exportOptionsPlist ../../export-options.plist
-        fi
-      continue-on-error: true
-        
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: ios-build
-        path: |
-          ios/App/REDash.xcarchive
-          ios/App/export
-          ios/App/build
-        retention-days: 30
-        if-no-files-found: warn
+YAML
+- name: Build iOS App
+  run: |
+    xcodebuild \
+      -workspace App.xcworkspace \
+      -scheme App \
+      -destination 'platform=iOS Simulator,OS=17.2,name=iPhone 14' \
+      build
+List Available Simulators Before Build
+
+Add a step to show available simulators, which helps to select a valid destination:
+
+YAML
+- name: List available simulators
+  run: xcrun simctl list devices
+Install Required Simulator Version (if using a self-hosted runner)
+
+If you're using a self-hosted runner, install the missing simulator via Xcode’s Preferences or command line.
