@@ -8,7 +8,7 @@ const config: CapacitorConfig = {
     androidScheme: 'https'
   },
   ios: {
-    minVersion: '14.0',
+    minVersion: '13.0',
     cordovaSwiftVersion: '5.0'
   },
   plugins: {
@@ -16,14 +16,6 @@ const config: CapacitorConfig = {
       launchShowDuration: 2000,
       backgroundColor: "#ffffff",
       showSpinner: false
-    },
-    LocalNotifications: {
-      smallIcon: "ic_stat_icon_config_sample",
-      iconColor: "#488AFF",
-      sound: "beep.wav"
-    },
-    PushNotifications: {
-      presentationOptions: ["badge", "sound", "alert"]
     }
   }
 };
