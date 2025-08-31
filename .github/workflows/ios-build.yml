@@ -22,7 +22,12 @@ jobs:
         cache: 'npm'
         
     - name: Install dependencies
-      run: npm install
+      run: |
+        echo "=== Checking for lock files ==="
+        ls -la
+        echo "=== Installing dependencies ==="
+        npm install --no-package-lock
+        echo "=== Dependencies installed ==="
       
     - name: Build React app for production
       run: npm run build
