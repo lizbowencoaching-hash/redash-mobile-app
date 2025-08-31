@@ -19,15 +19,9 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-        cache: 'npm'
         
     - name: Install dependencies
-      run: |
-        echo "=== Checking for lock files ==="
-        ls -la
-        echo "=== Installing dependencies ==="
-        npm install --no-package-lock
-        echo "=== Dependencies installed ==="
+      run: npm install
       
     - name: Build React app for production
       run: npm run build
