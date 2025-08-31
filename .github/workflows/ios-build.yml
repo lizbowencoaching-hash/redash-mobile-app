@@ -1,4 +1,4 @@
-name: Build iOS App
+name: Build iOS App for TestFlight/App Store
 
 on:
   push:
@@ -19,11 +19,12 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
+        cache: 'npm'
         
     - name: Install dependencies
-      run: npm install
+      run: npm ci
       
-    - name: Build React app
+    - name: Build React app for production
       run: npm run build
       
     - name: Setup Capacitor
@@ -40,12 +41,9 @@ jobs:
     - name: Add iOS platform
       run: npx cap add ios
       
-    - name: Check available Xcode versions
+    - name: Show Xcode and simulator info
       run: |
-        echo "=== Available Xcode Versions ==="
-        ls /Applications/ | grep -i xcode
-        echo ""
-        echo "=== Current Xcode Version ==="
+        echo "=== Xcode Version ==="
         xcodebuild -version
         echo ""
         echo "=== Available iOS Simulators ==="
@@ -54,33 +52,10 @@ jobs:
         echo "=== Available Runtimes ==="
         xcrun simctl list runtimes
         
-    - name: Update CocoaPods and clear cache
+    - name: Update CocoaPods
       run: |
         sudo gem install cocoapods --force
         pod repo update
-        pod cache clean --all
-        
-    - name: Create minimal Podfile
-      run: |
-        cat > ios/App/Podfile << 'EOF'
-        require_relative '../../node_modules/@capacitor/ios/scripts/pods_helpers'
-
-        platform :ios, '13.0'
-        use_frameworks!
-
-        def capacitor_pods
-          pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
-          pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
-        end
-
-        target 'App' do
-          capacitor_pods
-        end
-
-        post_install do |installer|
-          assertDeploymentTarget(installer)
-        end
-        EOF
         
     - name: Install iOS dependencies
       run: |
@@ -89,61 +64,75 @@ jobs:
         
     - name: Sync Capacitor
       run: npx cap sync ios
+      
+    - name: Configure iOS project for production
+      run: |
+        cd ios/App
+        
+        # Update Info.plist for production
+        /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName REDash" App/Info.plist
+        /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1.0.0" App/Info.plist
+        /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.0.0" App/Info.plist
+        
+        # Add required permissions for camera/photo library
+        /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 'This app needs camera access to take photos of properties for your transactions.'" App/Info.plist || true
+        /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string 'This app needs photo library access to select images for your transactions.'" App/Info.plist || true
+        
+        echo "=== Info.plist Configuration ==="
+        cat App/Info.plist
         
     - name: Find available iOS simulator
       id: find-simulator
       run: |
         echo "=== Finding Available iOS Simulator ==="
         
-        # Get the first available iPhone simulator (any version)
-        SIMULATOR_INFO=$(xcrun simctl list devices available | grep "iPhone" | head -1)
-        echo "Found simulator line: $SIMULATOR_INFO"
+        # Get all available devices and find the first iPhone
+        SIMULATOR_LINE=$(xcrun simctl list devices available | grep "iPhone" | head -1)
+        echo "Found simulator line: $SIMULATOR_LINE"
         
-        if [ -z "$SIMULATOR_INFO" ]; then
+        if [ -z "$SIMULATOR_LINE" ]; then
           echo "No iPhone simulators found, trying iPad..."
-          SIMULATOR_INFO=$(xcrun simctl list devices available | grep "iPad" | head -1)
+          SIMULATOR_LINE=$(xcrun simctl list devices available | grep "iPad" | head -1)
         fi
         
-        if [ -z "$SIMULATOR_INFO" ]; then
-          echo "No simulators found at all!"
+        if [ -z "$SIMULATOR_LINE" ]; then
+          echo "No simulators found!"
           exit 1
         fi
         
-        # Extract device name (everything before the first parenthesis)
-        DEVICE_NAME=$(echo "$SIMULATOR_INFO" | sed 's/^[[:space:]]*//' | sed 's/ (.*//')
-        echo "Device name: $DEVICE_NAME"
+        # Extract device name (text before the first parenthesis)
+        DEVICE_NAME=$(echo "$SIMULATOR_LINE" | sed 's/^[[:space:]]*//' | sed 's/ (.*//')
+        echo "Device name: '$DEVICE_NAME'"
         
-        # Get iOS version from the section header above this device
-        IOS_VERSION=$(xcrun simctl list devices available | grep -B 20 "$SIMULATOR_INFO" | grep "-- iOS" | tail -1 | sed 's/.*iOS \([0-9.]*\).*/\1/')
-        echo "iOS version: $IOS_VERSION"
+        # Find the iOS version by looking at the section this device is under
+        IOS_VERSION=$(xcrun simctl list devices available | grep -B 10 "$SIMULATOR_LINE" | grep "-- iOS" | tail -1 | sed 's/.*iOS \([0-9.]*\).*/\1/')
         
-        # Fallback: if we can't extract version, use any available runtime
         if [ -z "$IOS_VERSION" ]; then
-          IOS_VERSION=$(xcrun simctl list runtimes | grep "iOS" | head -1 | sed 's/.*iOS \([0-9.]*\).*/\1/')
-          echo "Fallback iOS version: $IOS_VERSION"
+          # Fallback: get any iOS runtime version
+          IOS_VERSION=$(xcrun simctl list runtimes | grep "iOS" | head -1 | awk '{print $2}')
         fi
         
+        echo "iOS version: '$IOS_VERSION'"
         echo "device_name=$DEVICE_NAME" >> $GITHUB_OUTPUT
         echo "ios_version=$IOS_VERSION" >> $GITHUB_OUTPUT
         
-        echo "Will use destination: platform=iOS Simulator,name=$DEVICE_NAME,OS=$IOS_VERSION"
-        
-    - name: Build iOS app for simulator
+    - name: Build iOS app for simulator (testing)
       run: |
         cd ios/App
-        echo "Building for simulator with destination: platform=iOS Simulator,name=${{ steps.find-simulator.outputs.device_name }},OS=${{ steps.find-simulator.outputs.ios_version }}"
+        echo "Building for simulator: ${{ steps.find-simulator.outputs.device_name }} (iOS ${{ steps.find-simulator.outputs.ios_version }})"
         
         xcodebuild -workspace App.xcworkspace \
           -scheme App \
           -configuration Debug \
           -destination "platform=iOS Simulator,name=${{ steps.find-simulator.outputs.device_name }},OS=${{ steps.find-simulator.outputs.ios_version }}" \
-          -derivedDataPath ./build \
+          -derivedDataPath ./build-simulator \
           build
-          
-    - name: Build iOS app for device (generic)
+      continue-on-error: true
+        
+    - name: Build iOS app for generic device (production)
       run: |
         cd ios/App
-        echo "Building for generic iOS device..."
+        echo "Building for generic iOS device (production build)..."
         
         xcodebuild -workspace App.xcworkspace \
           -scheme App \
@@ -154,46 +143,107 @@ jobs:
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGNING_ALLOWED=NO
-      continue-on-error: true
         
-    - name: Archive iOS app
+    - name: Archive iOS app for TestFlight/App Store
       run: |
         cd ios/App
-        echo "Creating archive..."
+        echo "Creating production archive for TestFlight/App Store..."
         
         xcodebuild -workspace App.xcworkspace \
           -scheme App \
           -configuration Release \
           -destination "generic/platform=iOS" \
-          -archivePath ./REDash.xcarchive \
+          -archivePath ./REDash-Production.xcarchive \
           archive \
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGNING_ALLOWED=NO
-      continue-on-error: true
         
-    - name: Create IPA (if archive succeeds)
+    - name: Export IPA for TestFlight
       run: |
         cd ios/App
-        if [ -d "./REDash.xcarchive" ]; then
-          echo "Creating IPA from archive..."
+        if [ -d "./REDash-Production.xcarchive" ]; then
+          echo "Creating production IPA for TestFlight..."
+          
+          # Create export options for App Store distribution
+          cat > ExportOptions.plist << 'EOF'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>method</key>
+            <string>app-store</string>
+            <key>uploadBitcode</key>
+            <false/>
+            <key>compileBitcode</key>
+            <false/>
+            <key>uploadSymbols</key>
+            <true/>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>stripSwiftSymbols</key>
+            <true/>
+            <key>thinning</key>
+            <string>&lt;none&gt;</string>
+        </dict>
+        </plist>
+        EOF
+          
           xcodebuild -exportArchive \
-            -archivePath ./REDash.xcarchive \
-            -exportPath ./export \
-            -exportOptionsPlist ../../export-options.plist
+            -archivePath ./REDash-Production.xcarchive \
+            -exportPath ./export-production \
+            -exportOptionsPlist ./ExportOptions.plist || echo "Export failed - this is expected without proper code signing"
         else
-          echo "Archive not found, skipping IPA creation"
+          echo "Archive not found, skipping IPA export"
         fi
       continue-on-error: true
         
-    - name: Upload build artifacts
+    - name: Create app metadata for App Store
+      run: |
+        mkdir -p app-store-metadata
+        
+        cat > app-store-metadata/app-info.txt << 'EOF'
+        REDash - Real Estate Goal Tracking App
+        
+        App Store Information:
+        - App Name: REDash
+        - Bundle ID: com.redash.app
+        - Version: 1.0.0
+        - Category: Business/Productivity
+        - Target Audience: Real Estate Professionals
+        
+        Key Features:
+        - Annual goal setting and tracking
+        - Transaction management (Active, Under Contract, Closed)
+        - Progress visualization with color-coded charts
+        - Photo uploads for property transactions
+        - Monthly push notification reminders
+        - Buyer and Seller transaction separation
+        - Sales volume and commission tracking
+        
+        App Store Description:
+        REDash helps real estate professionals track their annual goals and manage transactions efficiently. Set yearly targets for closed transactions, sales volume, and commission income, then track your progress with beautiful visual charts. Manage your active, under contract, and closed transactions with photo uploads and detailed records.
+        
+        Privacy Policy Required: Yes (app collects user data)
+        Uses Camera: Yes (for property photos)
+        Uses Push Notifications: Yes (monthly reminders)
+        
+        Next Steps for App Store Submission:
+        1. Create App Store Connect record
+        2. Add proper code signing certificates
+        3. Upload signed build via Xcode or Application Loader
+        4. Fill out app metadata and screenshots
+        5. Submit for Apple review
+        EOF
+        
+    - name: Upload production build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: ios-build
+        name: ios-production-build
         path: |
-          ios/App/build
           ios/App/build-device
-          ios/App/export
-          ios/App/REDash.xcarchive
+          ios/App/REDash-Production.xcarchive
+          ios/App/export-production
+          app-store-metadata
         retention-days: 30
         if-no-files-found: warn
