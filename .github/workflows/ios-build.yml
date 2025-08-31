@@ -40,10 +40,19 @@ jobs:
     - name: Add iOS platform
       run: npx cap add ios
       
-    - name: Setup Xcode version
-      uses: maxim-lobanov/setup-xcode@v1
-      with:
-        xcode-version: '15.4'
+    - name: Check available Xcode versions
+      run: |
+        echo "=== Available Xcode Versions ==="
+        ls /Applications/ | grep -i xcode
+        echo ""
+        echo "=== Current Xcode Version ==="
+        xcodebuild -version
+        echo ""
+        echo "=== Available iOS Simulators ==="
+        xcrun simctl list devices available
+        echo ""
+        echo "=== Available Runtimes ==="
+        xcrun simctl list runtimes
         
     - name: Update CocoaPods and clear cache
       run: |
@@ -73,53 +82,57 @@ jobs:
         end
         EOF
         
-    - name: Install iOS dependencies with verbose output
+    - name: Install iOS dependencies
       run: |
         cd ios/App
-        pod install --verbose --repo-update
+        pod install --repo-update
         
     - name: Sync Capacitor
       run: npx cap sync ios
         
-    - name: List ALL available simulators and runtimes
-      run: |
-        echo "=== Available Runtimes ==="
-        xcrun simctl list runtimes
-        echo ""
-        echo "=== Available Device Types ==="
-        xcrun simctl list devicetypes
-        echo ""
-        echo "=== Available Devices ==="
-        xcrun simctl list devices available
-        echo ""
-        echo "=== Xcode Version ==="
-        xcodebuild -version
-        
-    - name: Find and use any available iOS simulator
+    - name: Find available iOS simulator
       id: find-simulator
       run: |
-        # Get any available iOS device (just pick the first one)
-        DEVICE_LINE=$(xcrun simctl list devices available | grep "iPhone" | head -1)
-        echo "Found device line: $DEVICE_LINE"
+        echo "=== Finding Available iOS Simulator ==="
+        
+        # Get the first available iPhone simulator (any version)
+        SIMULATOR_INFO=$(xcrun simctl list devices available | grep "iPhone" | head -1)
+        echo "Found simulator line: $SIMULATOR_INFO"
+        
+        if [ -z "$SIMULATOR_INFO" ]; then
+          echo "No iPhone simulators found, trying iPad..."
+          SIMULATOR_INFO=$(xcrun simctl list devices available | grep "iPad" | head -1)
+        fi
+        
+        if [ -z "$SIMULATOR_INFO" ]; then
+          echo "No simulators found at all!"
+          exit 1
+        fi
         
         # Extract device name (everything before the first parenthesis)
-        DEVICE_NAME=$(echo "$DEVICE_LINE" | sed 's/^[[:space:]]*//' | sed 's/ (.*//')
-        echo "Extracted device name: $DEVICE_NAME"
+        DEVICE_NAME=$(echo "$SIMULATOR_INFO" | sed 's/^[[:space:]]*//' | sed 's/ (.*//')
+        echo "Device name: $DEVICE_NAME"
         
-        # Get the iOS version from the section header
-        IOS_VERSION=$(xcrun simctl list devices available | grep -B 10 "$DEVICE_LINE" | grep "-- iOS" | tail -1 | sed 's/.*iOS \([0-9.]*\).*/\1/')
-        echo "Extracted iOS version: $IOS_VERSION"
+        # Get iOS version from the section header above this device
+        IOS_VERSION=$(xcrun simctl list devices available | grep -B 20 "$SIMULATOR_INFO" | grep "-- iOS" | tail -1 | sed 's/.*iOS \([0-9.]*\).*/\1/')
+        echo "iOS version: $IOS_VERSION"
         
-        # Set outputs
+        # Fallback: if we can't extract version, use any available runtime
+        if [ -z "$IOS_VERSION" ]; then
+          IOS_VERSION=$(xcrun simctl list runtimes | grep "iOS" | head -1 | sed 's/.*iOS \([0-9.]*\).*/\1/')
+          echo "Fallback iOS version: $IOS_VERSION"
+        fi
+        
         echo "device_name=$DEVICE_NAME" >> $GITHUB_OUTPUT
         echo "ios_version=$IOS_VERSION" >> $GITHUB_OUTPUT
         
-        echo "Will use: platform=iOS Simulator,name=$DEVICE_NAME,OS=$IOS_VERSION"
+        echo "Will use destination: platform=iOS Simulator,name=$DEVICE_NAME,OS=$IOS_VERSION"
         
     - name: Build iOS app for simulator
       run: |
         cd ios/App
-        echo "Building with destination: platform=iOS Simulator,name=${{ steps.find-simulator.outputs.device_name }},OS=${{ steps.find-simulator.outputs.ios_version }}"
+        echo "Building for simulator with destination: platform=iOS Simulator,name=${{ steps.find-simulator.outputs.device_name }},OS=${{ steps.find-simulator.outputs.ios_version }}"
+        
         xcodebuild -workspace App.xcworkspace \
           -scheme App \
           -configuration Debug \
@@ -127,10 +140,11 @@ jobs:
           -derivedDataPath ./build \
           build
           
-    - name: Build iOS app for device (unsigned)
+    - name: Build iOS app for device (generic)
       run: |
         cd ios/App
-        # Build for device without code signing (for CI)
+        echo "Building for generic iOS device..."
+        
         xcodebuild -workspace App.xcworkspace \
           -scheme App \
           -configuration Release \
@@ -142,6 +156,36 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
       continue-on-error: true
         
+    - name: Archive iOS app
+      run: |
+        cd ios/App
+        echo "Creating archive..."
+        
+        xcodebuild -workspace App.xcworkspace \
+          -scheme App \
+          -configuration Release \
+          -destination "generic/platform=iOS" \
+          -archivePath ./REDash.xcarchive \
+          archive \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO
+      continue-on-error: true
+        
+    - name: Create IPA (if archive succeeds)
+      run: |
+        cd ios/App
+        if [ -d "./REDash.xcarchive" ]; then
+          echo "Creating IPA from archive..."
+          xcodebuild -exportArchive \
+            -archivePath ./REDash.xcarchive \
+            -exportPath ./export \
+            -exportOptionsPlist ../../export-options.plist
+        else
+          echo "Archive not found, skipping IPA creation"
+        fi
+      continue-on-error: true
+        
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -149,5 +193,7 @@ jobs:
         path: |
           ios/App/build
           ios/App/build-device
+          ios/App/export
+          ios/App/REDash.xcarchive
         retention-days: 30
         if-no-files-found: warn
