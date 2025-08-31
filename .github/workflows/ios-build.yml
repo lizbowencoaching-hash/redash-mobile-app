@@ -88,25 +88,42 @@ jobs:
         echo "=== Available device types ==="
         xcrun simctl list devicetypes
         
+    - name: Find available iOS simulator
+      id: find-simulator
+      run: |
+        # Get the latest available iOS runtime
+        LATEST_IOS=$(xcrun simctl list runtimes | grep "iOS" | grep -v "watchOS" | grep -v "tvOS" | tail -1 | sed 's/.*iOS \([0-9.]*\).*/\1/')
+        echo "Latest iOS version found: $LATEST_IOS"
+        
+        # Get available iPhone simulators
+        AVAILABLE_IPHONE=$(xcrun simctl list devices available | grep "iPhone" | head -1 | sed 's/.*iPhone \([^(]*\).*/iPhone \1/' | sed 's/[[:space:]]*$//')
+        echo "Available iPhone: $AVAILABLE_IPHONE"
+        
+        # Set outputs for use in build steps
+        echo "ios_version=$LATEST_IOS" >> $GITHUB_OUTPUT
+        echo "device_name=$AVAILABLE_IPHONE" >> $GITHUB_OUTPUT
+        
+        echo "Will use destination: platform=iOS Simulator,name=$AVAILABLE_IPHONE,OS=$LATEST_IOS"
+        
     - name: Build iOS app for simulator
       run: |
         cd ios/App
-        # Build for iOS Simulator using iOS 17.2 (commonly available on GitHub Actions)
+        # Build for iOS Simulator using dynamically detected version
         xcodebuild -workspace App.xcworkspace \
           -scheme App \
           -configuration Debug \
-          -destination 'platform=iOS Simulator,name=iPhone 14,OS=17.2' \
+          -destination "platform=iOS Simulator,name=${{ steps.find-simulator.outputs.device_name }},OS=${{ steps.find-simulator.outputs.ios_version }}" \
           -derivedDataPath ./build \
           build
           
     - name: Archive iOS app
       run: |
         cd ios/App
-        # Build for device using iOS 17.2 (unsigned for CI)
+        # Build for device using dynamically detected version (unsigned for CI)
         xcodebuild -workspace App.xcworkspace \
           -scheme App \
           -configuration Release \
-          -destination 'generic/platform=iOS,OS=17.2' \
+          -destination "generic/platform=iOS,OS=${{ steps.find-simulator.outputs.ios_version }}" \
           -archivePath ./REDash.xcarchive \
           archive \
           CODE_SIGN_IDENTITY="" \
